@@ -122,12 +122,19 @@ unordered_map<string, KEYWORDS> KeyWordsMap
 class JackTokenizer{
 	string CurToken;
 	FILE* xp;
+	string CurLine;
+	FILE* ip;
+	int idxInLine;
 public:
-	JackTokenizer()
+	JackTokenizer(FILE* ffp)
 	{
 		CurToken.clear();
+		CurLine.clear();
 		xp = NULL;
+		ip = ffp;
+		idxInLine = 0;
 	}
+
 	~JackTokenizer()
 	{
 		if (xp)
@@ -136,12 +143,22 @@ public:
 			fclose(xp);
 		}
 	}
+
 	void openXMLFile(char* fn)
 	{
 		xp = fopen(fn, "w");
 		Assert(xp, "Unable to open XML File");
 		fprintf(xp, "<tokens>\n");
 	}
+
+	bool hasMoreTokens()
+	{
+		if (feof(ip) && CurLine.size() == 0)
+			return false;
+		return true;
+	}
+
+
 
 	eTOKENTYPE getTokenType()
 	{
@@ -163,6 +180,7 @@ public:
 			return eTT_IDENTIFIER;
 		}
 	}
+
 	string getSymbolPrint()
 	{
 		string retStr;
@@ -187,6 +205,7 @@ public:
 		}
 		return retStr;
 	}
+
 	void ProcessCurrentToken()
 	{
 		eTOKENTYPE eTT = getTokenType();
@@ -221,40 +240,110 @@ public:
 			break;
 		}
 	}
-	void ProcessOneLine(string Line)
+
+	void advance()
+	{
+		char line[100];
+
+		if (CurLine.size() == 0)
+		{
+			while (fgets(line, 100, ip) != NULL)
+			{
+				if (line[0] != '\n')//ignore Empty Line
+				{
+					int i = 0;
+					while (i < 99 && (line[i] == ' ' || line[i] == '\t'))i++;
+					if (line[i] == '/' || line[i] == '*' || line[i] == '\n')//Ignore line Having only comments
+						continue;
+					else
+					{
+						int j = 0;
+						string ins;
+						char c = line[i + j];
+						do
+						{
+							ins.push_back(c);
+							j++;
+							c = line[i + j];
+						} while (c != '\n' &&  !(c == '/' && line[i + j + 1] == '/'));
+						while (ins.back() == ' ')ins.pop_back();
+						//objJackTokenizer.ProcessOneLine(ins);
+						CurLine = ins;
+						idxInLine = 0;
+						break;
+					}
+				}
+			}
+		}
+		ProcessOneLine();
+		if (idxInLine == CurLine.size())
+			CurLine.clear();
+		//Assert(CurToken.size() > 0, "Empty Cur Token");
+		printf("%s\n", CurToken.c_str());
+	}
+
+	void ProcessOneLine()
 	{
 		CurToken.clear();
-		for (int i = 0; i < Line.size(); ++i)
+		for (int i = idxInLine; i < CurLine.size(); ++i)
 		{
-			if (Line[i] == '\"')
+			if (CurLine[i] == '\"')
 			{
-				CurToken.push_back('\"');
-				while (++i<Line.size() && Line[i] != '\"')
-					CurToken.push_back(Line[i]);
-				if (CurToken.size()>0)
-					ProcessCurrentToken();
+				//CurToken.push_back('\"');
+				while (++i<CurLine.size() && CurLine[i] != '\"')
+					CurToken.push_back(CurLine[i]);
+				if (CurToken.size() > 0)
+				{
+					idxInLine = i+1;
+					return;
+					//ProcessCurrentToken();
+				}
 				CurToken.clear();
 				continue;
 			}
-			if (Line[i] == ' ' || SymbolsMap.find(Line[i]) != SymbolsMap.end())
+			if (CurLine[i] == ' ' || SymbolsMap.find(CurLine[i]) != SymbolsMap.end())
 			{
 				if (CurToken.size()>0)
-				ProcessCurrentToken();
-				CurToken.clear();
-				if (Line[i] != ' ')
 				{
-					CurToken.push_back(Line[i]);
+					idxInLine = i;
+					return;
+					//ProcessCurrentToken();
+				}
+				CurToken.clear();
+				if (CurLine[i] != ' ')
+				{
+					CurToken.push_back(CurLine[i]);
+					idxInLine = i+1;
+					return;
 					ProcessCurrentToken();
 					CurToken.clear();
 				}
 			}
 			else
-				CurToken.push_back(Line[i]);
+				CurToken.push_back(CurLine[i]);
 		}
-		if (CurToken.size()>0)
+		CurLine.clear();
+		if (CurToken.size() > 0)
+		{
+			idxInLine = CurToken.size();
+			return;
 			ProcessCurrentToken();
+		}
+	}
+
+};
+
+class CompilationEngine{
+	FILE* cfp;
+public:
+	CompilationEngine(FILE* tfp)
+	{
+		
 	}
 };
+
+
+
 
 int main(int argc, char* argv[])
 {
@@ -265,13 +354,18 @@ int main(int argc, char* argv[])
 	Assert(fp, "\nFile Not found");
 	char *fn = strtok(argv[1], ".");
 	strcpy(hackFn, fn);
-	strcat(hackFn, "Tok.xml");
+	strcat(hackFn, "Pok.xml");
 	/*FILE *hp;
 	hp = fopen(hackFn, "w");
 	Assert(hp,"\nUnable to Create xml File");
 	*/
-	JackTokenizer objJackTokenizer;
-	objJackTokenizer.openXMLFile(hackFn);
+	JackTokenizer objJackTokenizer(fp);
+	//objJackTokenizer.openXMLFile(hackFn);
+	while(objJackTokenizer.hasMoreTokens())
+	{
+		objJackTokenizer.advance();
+	}
+#if 0
 	char line[100];
 	//read each line
 	while (fgets(line, 100, fp) != NULL)
@@ -298,7 +392,9 @@ int main(int argc, char* argv[])
 			}
 		}
 	}
-
+#endif
+	if (feof(fp))
+		printf("End of File");
 
 	fclose(fp);
 
