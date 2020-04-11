@@ -573,7 +573,16 @@ public:
 
 	void compileWhileStatement()
 	{
+		PRINT_WITH_TAB(curTab++, "<whileStatement>\n");
 		eatPrint("while", "keyword");
+		eatPrint("(", "symbol");
+		compileExpression();
+		eatPrint(")", "symbol");
+		eatPrint("{", "symbol");
+		compileStatements();
+		eatPrint("}", "symbol");
+		PRINT_WITH_TAB(--curTab, "</whileStatement>\n");
+
 	}
 
 	void compileLetStatement()
