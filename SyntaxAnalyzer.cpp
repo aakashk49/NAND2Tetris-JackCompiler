@@ -12,6 +12,16 @@ using namespace std;
 #define Assert(X,Y) if(!(X)) \
 { printf(Y); while (1); }
 
+#define PRINT_WITH_TAB(ct,TXT)	\
+			{int  tt = (ct); while(tt--)fprintf(xfp,"  "); fprintf(xfp,TXT);}
+
+#define PRINT_IDEN_WITH_TAB(ct,TXT,ID)	\
+			{int  tt = (ct); while(tt--)fprintf(xfp,"  "); fprintf(xfp,TXT,ID);}
+
+#define PRINT_TABS(ct)	\
+	{int  tt = (ct); while(tt--)fprintf(xfp,"  ");}
+
+
 //eNUMS
 enum  eSYMBOLS
 {
@@ -19,19 +29,20 @@ enum  eSYMBOLS
 	eRightCurl,
 	eLeftBracket,
 	eRightBracket,
-	eLessThan,
-	eGreaterThan,
-	eEqual,
 	eSemiColon,
 	eSquareBracketOpen,
 	eSquareBracketClose,
 	eDot,
 	eComma,
-	ePlus,
+	eOpStart,
+	ePlus = eOpStart,
 	eMinus,
 	eMultiply,
 	eDivide,
-	eAmpersAnd,
+	eLessThan,
+	eGreaterThan,
+	eEqual,
+	eLogicalAnd,
 	eLogicalOr,
 	eLogicalNot
 };
@@ -47,10 +58,13 @@ enum eTOKENTYPE
 
 enum KEYWORDS
 {
-	key_CLASS,
 	key_IF,
+	key_WHILE,
 	key_LET,
-	key_CONST,
+	key_DO,
+	key_RETURN,
+	key_STATEMENTS_CNT,
+	key_CONST = key_STATEMENTS_CNT,
 	key_FUN,
 	key_METHOD,
 	key_FIELD,
@@ -64,10 +78,9 @@ enum KEYWORDS
 	key_FALSE,
 	key_NULL,
 	key_THIS,
-	key_DO,
 	key_ELSE,
-	key_WHILE,
-	key_RETURN,
+	key_CLASS,
+	key_NONE
 };
 
 //maps
@@ -88,7 +101,7 @@ unordered_map<char, eSYMBOLS> SymbolsMap = {
 	{ '-', eMinus },
 	{ '*', eMultiply },
 	{ '/', eDivide },
-	{ '&', eAmpersAnd },
+	{ '&', eLogicalAnd },
 	{ '|', eLogicalOr },
 	{ '~', eLogicalNot }
 };
@@ -120,12 +133,13 @@ unordered_map<string, KEYWORDS> KeyWordsMap
 
 //classes
 class JackTokenizer{
-	string CurToken;
 	FILE* xp;
 	string CurLine;
 	FILE* ip;
 	int idxInLine;
 public:
+	string CurToken;
+
 	JackTokenizer(FILE* ffp)
 	{
 		CurToken.clear();
@@ -330,15 +344,332 @@ public:
 			ProcessCurrentToken();
 		}
 	}
-
+	void eat(string match)
+	{
+		if (match == CurToken)
+		{
+			advance();
+		}
+		else
+		{
+			Assert(false, "Compile Error");
+		}
+	}
 };
 
+
 class CompilationEngine{
-	FILE* cfp;
+	FILE* xfp;
+	JackTokenizer * pJackTok;
+	int curTab;
+	void(CompilationEngine::*pfCompileStatement[key_STATEMENTS_CNT])();
 public:
-	CompilationEngine(FILE* tfp)
+	CompilationEngine(FILE* tfp,char* fn)
+	{
+		pJackTok = new JackTokenizer(tfp);
+		pJackTok->advance();
+		xfp = fopen(fn, "w");
+		Assert(xfp, "Unable to open XML File");
+		//fprintf(xp, "<tokens>\n");
+		curTab = 0;
+		
+	}
+
+	void eatPrint(string match,string Type)
+	{
+		if (match == pJackTok->CurToken)
+		{
+			pJackTok->advance();
+			PRINT_TABS(curTab);
+			fprintf(xfp, "<%s> %s </%s>\n", Type.c_str(), match.c_str(), Type.c_str());
+		}
+		else
+		{
+			Assert(false, "Compile Error");
+		}
+	}
+	void PrintType()
+	{
+		if (KeyWordsMap.find(pJackTok->CurToken) != KeyWordsMap.end())
+		{
+			PRINT_IDEN_WITH_TAB(curTab, "<keyword> %s </keyword>\n", pJackTok->CurToken.c_str());
+		}
+		else
+		{
+			PRINT_IDEN_WITH_TAB(curTab, "<identifier> %s </identifier>\n", pJackTok->CurToken.c_str());
+		}
+	}
+	void CompileClassVarDec()
+	{
+		while (pJackTok->CurToken == "static" || pJackTok->CurToken == "field")
+		{
+			PRINT_WITH_TAB(curTab++, "<classVarDec>\n")
+
+			PRINT_IDEN_WITH_TAB(curTab, "<keyword> %s </keyword>\n", pJackTok->CurToken.c_str());
+			pJackTok->advance();
+			//PRINT_IDEN_WITH_TAB(curTab, "<keyword> %s </keyword>\n", pJackTok->CurToken.c_str());
+			PrintType();
+			pJackTok->advance();
+			PRINT_IDEN_WITH_TAB(curTab, "<identifier> %s </identifier>\n", pJackTok->CurToken.c_str());
+			pJackTok->advance();
+			while (pJackTok->CurToken == ",")
+			{
+				pJackTok->eat(",");
+				PRINT_IDEN_WITH_TAB(curTab, "<identifier> %s </identifier>\n", pJackTok->CurToken.c_str());
+				pJackTok->advance();
+			}
+			pJackTok->eat(";");
+			PRINT_WITH_TAB(curTab--, "<symbol> ; </symbol>\n");
+			PRINT_WITH_TAB(curTab, "</classVarDec>\n")
+
+		}
+	}
+
+	void CompileParamList()
+	{
+		PRINT_WITH_TAB(curTab++, "<parameterList>\n")
+
+		while (pJackTok->CurToken != ")")
+		{
+			PrintType();
+			//PRINT_IDEN_WITH_TAB(curTab, "<keyword> %s </keyword>\n", pJackTok->CurToken.c_str());
+			pJackTok->advance();
+			PRINT_IDEN_WITH_TAB(curTab, "<identifier> %s </identifier>\n", pJackTok->CurToken.c_str());
+			pJackTok->advance();
+			if (pJackTok->CurToken == ",")
+			{
+				eatPrint(",", "symbol");
+			}
+		}
+
+		PRINT_WITH_TAB(--curTab, "</parameterList>\n")
+	}
+
+
+	void CompileSubRoutineDec()
 	{
 		
+			PRINT_WITH_TAB(curTab++, "<subroutineDec>\n");
+			PRINT_IDEN_WITH_TAB(curTab, "<keyword> %s </keyword>\n", pJackTok->CurToken.c_str());
+			pJackTok->advance();
+			PRINT_IDEN_WITH_TAB(curTab, "<keyword> %s </keyword>\n", pJackTok->CurToken.c_str());
+			pJackTok->advance();
+			PRINT_IDEN_WITH_TAB(curTab, "<identifier> %s </identifier>\n", pJackTok->CurToken.c_str());
+			pJackTok->advance();
+			eatPrint("(","symbol");
+			CompileParamList();
+			eatPrint(")", "symbol");
+			CompileSubRoutineBody();
+			PRINT_WITH_TAB(--curTab, "</subroutineDec>\n");
+
+	}
+
+	void CompileVarDec()
+	{
+		while (pJackTok->CurToken == "var")
+		{
+			PRINT_WITH_TAB(curTab++, "<varDec>\n");
+			eatPrint("var", "keyword");
+			PrintType();
+			pJackTok->advance();
+			PRINT_IDEN_WITH_TAB(curTab, "<identifier> %s </identifier>\n", pJackTok->CurToken.c_str());
+			pJackTok->advance();
+			while (pJackTok->CurToken == ",")
+			{
+				eatPrint(",", "symbol");
+				//PrintType();
+				//pJackTok->advance();
+				PRINT_IDEN_WITH_TAB(curTab, "<identifier> %s </identifier>\n", pJackTok->CurToken.c_str());
+				pJackTok->advance();
+			}
+			eatPrint(";", "symbol");
+			PRINT_WITH_TAB(--curTab, "</varDec>\n");
+		}
+
+	}
+	
+	KEYWORDS isNextStatement()
+	{
+		KEYWORDS retKW = key_NONE;
+		if (KeyWordsMap.find(pJackTok->CurToken) != KeyWordsMap.end())
+		{
+			KEYWORDS KW_map = KeyWordsMap[pJackTok->CurToken];
+			if (KW_map == key_IF || KW_map == key_WHILE || KW_map == key_LET || KW_map == key_DO || KW_map == key_RETURN)
+				retKW = KW_map;
+		}
+		return retKW;
+	}
+
+	void CompileTerm()
+	{
+		PRINT_WITH_TAB(curTab++, "<term>\n");
+		PRINT_IDEN_WITH_TAB(curTab, "<identifier> %s </identifier>\n", pJackTok->CurToken.c_str());
+		pJackTok->advance();
+		PRINT_WITH_TAB(--curTab, "</term>\n");
+	}
+
+	void compileExpression()
+	{
+		PRINT_WITH_TAB(curTab++, "<expression>\n");
+		CompileTerm();
+		string nextTok = pJackTok->CurToken;
+		while (nextTok.size() == 1 &&
+			SymbolsMap.find(nextTok[0]) != SymbolsMap.end() &&
+			SymbolsMap[nextTok[0]] >= eOpStart)
+		{
+			//Op Term
+			eatPrint(nextTok, "symbol");
+			CompileTerm();
+			nextTok = pJackTok->CurToken;
+		}
+		PRINT_WITH_TAB(-- curTab, "</expression>\n");
+	}
+
+
+	void compileStatements()
+	{
+		PRINT_WITH_TAB(curTab++, "<statements>\n");
+		while (1)
+		{
+			KEYWORDS eKW = isNextStatement();
+			if (eKW == key_NONE)break;
+			(this->*pfCompileStatement[eKW])();
+		}
+		PRINT_WITH_TAB(--curTab, "</statements>\n");
+	}
+
+	void compileIfStatement()
+	{
+		PRINT_WITH_TAB(curTab++, "<ifStatement>\n");
+		eatPrint("if", "keyword");
+		eatPrint("(", "symbol");
+		compileExpression();
+		eatPrint(")", "symbol");
+		eatPrint("{", "symbol");
+		compileStatements();
+		eatPrint("}", "symbol");
+		//else part
+		if (pJackTok->CurToken == "else")
+		{
+			eatPrint("else", "keyword");
+			eatPrint("{", "symbol");
+			compileStatements();
+			eatPrint("}", "symbol");
+		}
+		PRINT_WITH_TAB(--curTab, "</ifStatement>\n");
+	}
+
+	void compileWhileStatement()
+	{
+		eatPrint("while", "keyword");
+	}
+
+	void compileLetStatement()
+	{
+		PRINT_WITH_TAB(curTab++, "<letStatement>\n");
+		eatPrint("let", "keyword");
+		PRINT_IDEN_WITH_TAB(curTab, "<identifier> %s </identifier>\n", pJackTok->CurToken.c_str());
+		pJackTok->advance();
+		if (pJackTok->CurToken == "[")
+		{
+			eatPrint("[", "symbol");
+			compileExpression();
+			eatPrint("]", "symbol");
+		}
+		eatPrint("=", "symbol");
+		compileExpression();
+		eatPrint(";", "symbol");
+		PRINT_WITH_TAB(--curTab, "</letStatement>\n");
+
+	}
+
+	void compileExpList()
+	{
+		PRINT_WITH_TAB(curTab++, "<expressionList>\n");
+		while (pJackTok->CurToken != ")")
+		{
+			compileExpression();
+			while (pJackTok->CurToken == ",")
+				compileExpression();
+		}
+		PRINT_WITH_TAB(--curTab, "</expressionList>\n");
+
+	}
+
+
+	void CompileSubRoutineCall()
+	{
+		//Sub Routine Name
+		PRINT_IDEN_WITH_TAB(curTab, "<identifier> %s </identifier>\n", pJackTok->CurToken.c_str());
+		pJackTok->advance();
+		eatPrint(".", "symbol");
+		//Sub Routine Name
+		PRINT_IDEN_WITH_TAB(curTab, "<identifier> %s </identifier>\n", pJackTok->CurToken.c_str());
+		pJackTok->advance();
+		eatPrint("(", "symbol");
+		compileExpList();
+		eatPrint(")", "symbol");
+
+	}
+
+
+	void compileDoStatement()
+	{
+		PRINT_WITH_TAB(curTab++, "<doStatement>\n");
+		eatPrint("do", "keyword");
+		CompileSubRoutineCall();
+		eatPrint(";", "symbol");
+		PRINT_WITH_TAB(--curTab, "</doStatement>\n");
+
+	}
+
+	void compileReturnStatement()
+	{
+		PRINT_WITH_TAB(curTab++, "<returnStatement>\n");
+		eatPrint("return", "keyword");
+		if (pJackTok->CurToken != ";")
+			compileExpression();
+		eatPrint(";", "symbol");
+		PRINT_WITH_TAB(--curTab, "</returnStatement>\n");
+
+	}
+
+	void initializeFP()
+	{
+		pfCompileStatement[0] = &CompilationEngine::compileIfStatement;
+		pfCompileStatement[1] = &CompilationEngine::compileWhileStatement;
+		pfCompileStatement[2] = &CompilationEngine::compileLetStatement;
+		pfCompileStatement[3] = &CompilationEngine::compileDoStatement;
+		pfCompileStatement[4] = &CompilationEngine::compileReturnStatement;
+	}
+
+
+
+	void CompileSubRoutineBody()
+	{
+		PRINT_WITH_TAB(curTab++, "<subroutineBody>\n");
+		eatPrint("{","symbol");
+		CompileVarDec();
+		compileStatements();
+		eatPrint("}", "symbol");
+		PRINT_WITH_TAB(--curTab, "</subroutineBody>\n");
+
+	}
+
+	void CompileClass()
+	{
+		initializeFP();
+		pJackTok->eat("class");
+		PRINT_WITH_TAB(curTab++, "<class>\n");
+		PRINT_WITH_TAB(curTab, "<keyword> class </keyword>\n");
+		PRINT_IDEN_WITH_TAB(curTab, "<identifier> %s </identifier>\n", pJackTok->CurToken.c_str());
+		pJackTok->advance();
+		eatPrint("{","symbol");
+		CompileClassVarDec();
+		while (pJackTok->CurToken == "constructor" || pJackTok->CurToken == "function" || pJackTok->CurToken == "method")
+			CompileSubRoutineDec();
+		eatPrint("}", "symbol");
+		PRINT_WITH_TAB(--curTab, "</class>\n");
 	}
 };
 
@@ -359,12 +690,14 @@ int main(int argc, char* argv[])
 	hp = fopen(hackFn, "w");
 	Assert(hp,"\nUnable to Create xml File");
 	*/
-	JackTokenizer objJackTokenizer(fp);
+	//JackTokenizer objJackTokenizer(fp);
 	//objJackTokenizer.openXMLFile(hackFn);
-	while(objJackTokenizer.hasMoreTokens())
-	{
-		objJackTokenizer.advance();
-	}
+	//while(objJackTokenizer.hasMoreTokens())
+	//{
+	//	objJackTokenizer.advance();
+	//}
+	CompilationEngine objCompiler(fp,hackFn);
+	objCompiler.CompileClass();
 #if 0
 	char line[100];
 	//read each line
