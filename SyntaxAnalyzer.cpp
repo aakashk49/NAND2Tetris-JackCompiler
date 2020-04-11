@@ -74,10 +74,12 @@ enum KEYWORDS
 	key_CHAR,
 	key_BOOL,
 	key_VOID,
-	key_TRUE,
+	key_KW_CONST_START,
+	key_TRUE = key_KW_CONST_START,
 	key_FALSE,
 	key_NULL,
 	key_THIS,
+	key_KW_CONST_END = key_THIS,
 	key_ELSE,
 	key_CLASS,
 	key_NONE
@@ -414,7 +416,7 @@ public:
 			pJackTok->advance();
 			while (pJackTok->CurToken == ",")
 			{
-				pJackTok->eat(",");
+				eatPrint(",","symbol");
 				PRINT_IDEN_WITH_TAB(curTab, "<identifier> %s </identifier>\n", pJackTok->CurToken.c_str());
 				pJackTok->advance();
 			}
@@ -452,7 +454,8 @@ public:
 			PRINT_WITH_TAB(curTab++, "<subroutineDec>\n");
 			PRINT_IDEN_WITH_TAB(curTab, "<keyword> %s </keyword>\n", pJackTok->CurToken.c_str());
 			pJackTok->advance();
-			PRINT_IDEN_WITH_TAB(curTab, "<keyword> %s </keyword>\n", pJackTok->CurToken.c_str());
+			PrintType();
+			//PRINT_IDEN_WITH_TAB(curTab, "<keyword> %s </keyword>\n", pJackTok->CurToken.c_str());
 			pJackTok->advance();
 			PRINT_IDEN_WITH_TAB(curTab, "<identifier> %s </identifier>\n", pJackTok->CurToken.c_str());
 			pJackTok->advance();
@@ -503,8 +506,17 @@ public:
 	void CompileTerm()
 	{
 		PRINT_WITH_TAB(curTab++, "<term>\n");
-		PRINT_IDEN_WITH_TAB(curTab, "<identifier> %s </identifier>\n", pJackTok->CurToken.c_str());
-		pJackTok->advance();
+		string nexTok = pJackTok->CurToken;
+		//KeyWordConstant
+		if (KeyWordsMap.find(nexTok) != KeyWordsMap.end())
+		{
+			eatPrint(nexTok, "keyword");
+			Assert(KeyWordsMap[nexTok] >= key_KW_CONST_START && KeyWordsMap[nexTok] <= key_KW_CONST_END, "Wrong KeyWord Constant");
+		}
+		else{
+			PRINT_IDEN_WITH_TAB(curTab, "<identifier> %s </identifier>\n", pJackTok->CurToken.c_str());
+			pJackTok->advance();
+		}
 		PRINT_WITH_TAB(--curTab, "</term>\n");
 	}
 
@@ -590,7 +602,10 @@ public:
 		{
 			compileExpression();
 			while (pJackTok->CurToken == ",")
+			{
+				eatPrint(",", "symbol");
 				compileExpression();
+			}
 		}
 		PRINT_WITH_TAB(--curTab, "</expressionList>\n");
 
@@ -602,10 +617,13 @@ public:
 		//Sub Routine Name
 		PRINT_IDEN_WITH_TAB(curTab, "<identifier> %s </identifier>\n", pJackTok->CurToken.c_str());
 		pJackTok->advance();
-		eatPrint(".", "symbol");
-		//Sub Routine Name
-		PRINT_IDEN_WITH_TAB(curTab, "<identifier> %s </identifier>\n", pJackTok->CurToken.c_str());
-		pJackTok->advance();
+		if (pJackTok->CurToken == ".")
+		{
+			eatPrint(".", "symbol");
+			//Sub Routine Name
+			PRINT_IDEN_WITH_TAB(curTab, "<identifier> %s </identifier>\n", pJackTok->CurToken.c_str());
+			pJackTok->advance();
+		}
 		eatPrint("(", "symbol");
 		compileExpList();
 		eatPrint(")", "symbol");
