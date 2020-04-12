@@ -381,9 +381,14 @@ public:
 	{
 		if (match == pJackTok->CurToken)
 		{
-			pJackTok->advance();
 			PRINT_TABS(curTab);
-			fprintf(xfp, "<%s> %s </%s>\n", Type.c_str(), match.c_str(), Type.c_str());
+			if (Type == "symbol")
+			{
+				fprintf(xfp, "<%s> %s </%s>\n", Type.c_str(), pJackTok->getSymbolPrint().c_str(), Type.c_str());
+			}
+			else
+				fprintf(xfp, "<%s> %s </%s>\n", Type.c_str(), match.c_str(), Type.c_str());
+			pJackTok->advance();
 		}
 		else
 		{
