@@ -305,7 +305,7 @@ public:
 		{
 			if (CurLine[i] == '\"')
 			{
-				//CurToken.push_back('\"');
+				CurToken.push_back('\"');
 				while (++i<CurLine.size() && CurLine[i] != '\"')
 					CurToken.push_back(CurLine[i]);
 				if (CurToken.size() > 0)
@@ -507,15 +507,52 @@ public:
 	{
 		PRINT_WITH_TAB(curTab++, "<term>\n");
 		string nexTok = pJackTok->CurToken;
-		//KeyWordConstant
-		if (KeyWordsMap.find(nexTok) != KeyWordsMap.end())
+
+		if (nexTok == "(")
+		{
+			eatPrint("(", "symbol");
+			compileExpression();
+			eatPrint(")", "symbol");
+		}
+		else if (KeyWordsMap.find(nexTok) != KeyWordsMap.end())//KeyWordConstant
 		{
 			eatPrint(nexTok, "keyword");
 			Assert(KeyWordsMap[nexTok] >= key_KW_CONST_START && KeyWordsMap[nexTok] <= key_KW_CONST_END, "Wrong KeyWord Constant");
 		}
-		else{
-			PRINT_IDEN_WITH_TAB(curTab, "<identifier> %s </identifier>\n", pJackTok->CurToken.c_str());
+		else if (nexTok == "-" || nexTok == "~") //unary Op
+		{
+			eatPrint(nexTok, "symbol");
+			CompileTerm();
+		}
+		else if (nexTok[0] == '\"')//string constant
+		{
+			PRINT_IDEN_WITH_TAB(curTab, "<stringConstant> %s </stringConstant>\n", nexTok.substr(1).c_str());
 			pJackTok->advance();
+		}
+		else if (nexTok[0] >= '0' && nexTok[0] <= '9')//integer Constant
+		{
+			PRINT_IDEN_WITH_TAB(curTab, "<integerConstant> %s </integerConstant>\n", nexTok.c_str());
+			pJackTok->advance();
+		}
+		else{
+			pJackTok->advance();
+			string nnTok = pJackTok->CurToken;
+			if (nnTok == "(" || nnTok == ".")
+			{
+				CompileSubRoutineCall(nexTok);
+			}
+			else if (nnTok == "[")
+			{
+				PRINT_IDEN_WITH_TAB(curTab, "<identifier> %s </identifier>\n", nexTok.c_str());
+				eatPrint("[", "symbol");
+				compileExpression();
+				eatPrint("]", "symbol");
+			}
+			else
+			{
+				PRINT_IDEN_WITH_TAB(curTab, "<identifier> %s </identifier>\n", nexTok.c_str());
+				//pJackTok->advance();
+			}
 		}
 		PRINT_WITH_TAB(--curTab, "</term>\n");
 	}
@@ -621,11 +658,11 @@ public:
 	}
 
 
-	void CompileSubRoutineCall()
+	void CompileSubRoutineCall(string fTok)
 	{
 		//Sub Routine Name
-		PRINT_IDEN_WITH_TAB(curTab, "<identifier> %s </identifier>\n", pJackTok->CurToken.c_str());
-		pJackTok->advance();
+		PRINT_IDEN_WITH_TAB(curTab, "<identifier> %s </identifier>\n", fTok.c_str());
+		//pJackTok->advance();
 		if (pJackTok->CurToken == ".")
 		{
 			eatPrint(".", "symbol");
@@ -644,7 +681,9 @@ public:
 	{
 		PRINT_WITH_TAB(curTab++, "<doStatement>\n");
 		eatPrint("do", "keyword");
-		CompileSubRoutineCall();
+		string tempTok = pJackTok->CurToken;
+		pJackTok->advance();
+		CompileSubRoutineCall(tempTok);
 		eatPrint(";", "symbol");
 		PRINT_WITH_TAB(--curTab, "</doStatement>\n");
 
