@@ -115,6 +115,19 @@ unordered_map<char, eSYMBOLS> SymbolsMap = {
 	{ '~', eLogicalNot }
 };
 
+unordered_map<char, string> OpSymbMap = {
+	{ '+', "add" },
+	{ '-', "sub" },
+	{ '*', "call Math.multiply 2" },
+	{ '/', "call Math.divide 2" },
+	{ '=', "eq" },
+	{ '<', "lt" },
+	{ '>', "gt" },
+	{ '~', "not" },
+	{ '&', "and"},
+	{ '|', "or"},
+};
+
 unordered_map<string, KEYWORDS> KeyWordsMap
 {
 	{ "class", key_CLASS },
@@ -450,23 +463,32 @@ public:
 class CompilationEngine{
 	string ClassName;
 	FILE* xfp;
+	FILE* fpVM;
 	JackTokenizer * pJackTok;
 	SymbolTable objClassLevelST;
 	SymbolTable objRoutineLevelST;
 	int curTab;
 	void(CompilationEngine::*pfCompileStatement[key_STATEMENTS_CNT])();
 public:
-	CompilationEngine(FILE* tfp,char* fn)
+	CompilationEngine(FILE* tfp,char* fn,char* tVmf)
 	{
 		pJackTok = new JackTokenizer(tfp);
 		pJackTok->advance();
 		xfp = fopen(fn, "w");
 		Assert(xfp, "Unable to open XML File");
+		fpVM = fopen(tVmf, "w");
+		Assert(fpVM, "Unable to open Output VM File");
 		//fprintf(xp, "<tokens>\n");
 		curTab = 0;
 		
 	}
-
+	~CompilationEngine()
+	{
+		if (xfp)
+			fclose(xfp);
+		if (fpVM)
+			fclose(fpVM);
+	}
 	void PrintVarProperties(string varName,bool bDec)
 	{
 		if (objRoutineLevelST.isVarDec(varName))
@@ -593,7 +615,6 @@ public:
 	void CompileSubRoutineDec()
 	{
 		objRoutineLevelST.StartSubRoutine();
-
 		PRINT_WITH_TAB(curTab++, "<subroutineDec>\n");
 		PRINT_IDEN_WITH_TAB(curTab, "<keyword> %s </keyword>\n", pJackTok->CurToken.c_str());
 		if (pJackTok->CurToken == "method")
@@ -607,6 +628,8 @@ public:
 		//PRINT_IDEN_WITH_TAB(curTab, "<keyword> %s </keyword>\n", pJackTok->CurToken.c_str());
 		pJackTok->advance();
 		PRINT_IDEN_WITH_TAB(curTab, "<identifier> %s </identifier>\n", pJackTok->CurToken.c_str());
+		fprintf(fpVM, "function %s.%s ", ClassName.c_str(), pJackTok->CurToken.c_str());
+
 		pJackTok->advance();
 		eatPrint("(","symbol");
 		CompileParamList();
@@ -690,6 +713,7 @@ public:
 		else if (nexTok[0] >= '0' && nexTok[0] <= '9')//integer Constant
 		{
 			PRINT_IDEN_WITH_TAB(curTab, "<integerConstant> %s </integerConstant>\n", nexTok.c_str());
+			fprintf(fpVM, "push constant %s\n", nexTok.c_str());
 			pJackTok->advance();
 		}
 		else{
@@ -729,6 +753,8 @@ public:
 			//Op Term
 			eatPrint(nextTok, "symbol");
 			CompileTerm();
+			Assert((OpSymbMap.find(nextTok[0]) != OpSymbMap.end()), "Wrong Operation");
+			fprintf(fpVM, "%s\n", OpSymbMap[nextTok[0]].c_str());
 			nextTok = pJackTok->CurToken;
 		}
 		PRINT_WITH_TAB(-- curTab, "</expression>\n");
@@ -802,25 +828,30 @@ public:
 
 	}
 
-	void compileExpList()
+	int compileExpList()
 	{
+		int ArgCnt = 0;
 		PRINT_WITH_TAB(curTab++, "<expressionList>\n");
 		while (pJackTok->CurToken != ")")
 		{
+			ArgCnt++;
 			compileExpression();
 			while (pJackTok->CurToken == ",")
 			{
+				ArgCnt++;
 				eatPrint(",", "symbol");
 				compileExpression();
 			}
 		}
 		PRINT_WITH_TAB(--curTab, "</expressionList>\n");
-
+		return ArgCnt;
 	}
 
 
 	void CompileSubRoutineCall(string fTok)
 	{
+		string funcName = fTok;
+		bool bMethodCall = (objClassLevelST.isVarDec(fTok) || objRoutineLevelST.isVarDec(fTok));
 		//Sub Routine Name
 		PRINT_IDEN_WITH_TAB(curTab, "<identifier> %s </identifier>\n", fTok.c_str());
 		if (!(fTok == "Math" || fTok == "Array" || fTok == "Output" || fTok == "Screen" || fTok == "Keyboard" || fTok == "Memory"
@@ -831,13 +862,16 @@ public:
 		if (pJackTok->CurToken == ".")
 		{
 			eatPrint(".", "symbol");
+			funcName.push_back('.');
+			funcName.append(pJackTok->CurToken);
 			//Sub Routine Name
 			PRINT_IDEN_WITH_TAB(curTab, "<identifier> %s </identifier>\n", pJackTok->CurToken.c_str());
 			pJackTok->advance();
 		}
 		eatPrint("(", "symbol");
-		compileExpList();
+		int argCnt = compileExpList() + (bMethodCall?1:0);
 		eatPrint(")", "symbol");
+		fprintf(fpVM, "call %s %d\n", funcName.c_str(), argCnt);
 
 	}
 
@@ -849,6 +883,7 @@ public:
 		string tempTok = pJackTok->CurToken;
 		pJackTok->advance();
 		CompileSubRoutineCall(tempTok);
+		fprintf(fpVM, "pop temp 0\n");
 		eatPrint(";", "symbol");
 		PRINT_WITH_TAB(--curTab, "</doStatement>\n");
 
@@ -860,6 +895,9 @@ public:
 		eatPrint("return", "keyword");
 		if (pJackTok->CurToken != ";")
 			compileExpression();
+		else{
+			fprintf(fpVM, "push constant 0");
+		}
 		eatPrint(";", "symbol");
 		PRINT_WITH_TAB(--curTab, "</returnStatement>\n");
 
@@ -881,6 +919,7 @@ public:
 		PRINT_WITH_TAB(curTab++, "<subroutineBody>\n");
 		eatPrint("{","symbol");
 		CompileVarDec();
+		fprintf(fpVM,"%d\n",objRoutineLevelST.VarCount(eLocalVar));
 		compileStatements();
 		eatPrint("}", "symbol");
 		PRINT_WITH_TAB(--curTab, "</subroutineBody>\n");
@@ -913,11 +952,14 @@ int main(int argc, char* argv[])
 	system("cd");
 	Assert(argc >= 2, "Give file name to open");
 	char hackFn[50];
+	char Vmfp[50];
 	FILE* fp = fopen(argv[1], "r");
 	Assert(fp, "\nFile Not found");
 	char *fn = strtok(argv[1], ".");
 	strcpy(hackFn, fn);
+	strcpy(Vmfp, fn);
 	strcat(hackFn, "Pok.xml");
+	strcat(Vmfp, ".vm");
 	/*FILE *hp;
 	hp = fopen(hackFn, "w");
 	Assert(hp,"\nUnable to Create xml File");
@@ -928,7 +970,7 @@ int main(int argc, char* argv[])
 	//{
 	//	objJackTokenizer.advance();
 	//}
-	CompilationEngine objCompiler(fp,hackFn);
+	CompilationEngine objCompiler(fp,hackFn,Vmfp);
 	objCompiler.CompileClass();
 #if 0
 	char line[100];
