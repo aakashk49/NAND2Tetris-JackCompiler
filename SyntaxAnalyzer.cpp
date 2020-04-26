@@ -84,7 +84,14 @@ enum KEYWORDS
 	key_CLASS,
 	key_NONE
 };
-
+enum eVarKind{
+	eStaticVar,
+	eFieldVar,
+	eArgVar,
+	eLocalVar,
+	eVarKindCnt,
+	eUndefVar = eVarKindCnt
+};
 //maps
 unordered_map<char, eSYMBOLS> SymbolsMap = {
 	{ '{', eLeftCurl },
@@ -133,7 +140,87 @@ unordered_map<string, KEYWORDS> KeyWordsMap
 	{ "return", key_RETURN}
 };
 
+unordered_map<string, eVarKind>VarKindMap =
+{
+	{"static",eStaticVar },
+	{"field",eFieldVar},
+	{"var",eArgVar},
+	//{"",eLocalVar},
+};
+//Structs
+typedef struct
+{
+	string type;
+	eVarKind eKind;
+	int nKindCnt;
+	string name;
+}VarP;
+
+//unordered_map<string, VarP> SybmolTable;
 //classes
+
+class SymbolTable{
+	unordered_map<string, VarP> Table;
+	int anKindCnt[eVarKindCnt];
+public:
+	SymbolTable()
+	{
+		memset(anKindCnt, 0, sizeof(anKindCnt));
+	}
+	void StartSubRoutine()
+	{
+		Table.clear();
+		memset(anKindCnt, 0, sizeof(anKindCnt));
+
+	}
+	bool isVarDec(string name)
+	{
+		return (Table.find(name) != Table.end());
+	}
+	void Define(string name,string type,eVarKind eKind)
+	{
+		VarP stTemp = { type, eKind, anKindCnt[eKind]++,name };
+		Table[name] = stTemp;
+	}
+	void Define(VarP stVar)
+	{
+		stVar.nKindCnt = anKindCnt[stVar.eKind]++;
+		//VarP stTemp = { stVar.type, stVar.eKind, anKindCnt[stVar.eKind]++, stVar.name };
+		Table[stVar.name] = stVar;
+	}
+	int VarCount(eVarKind eKind)
+	{
+		return anKindCnt[eKind];
+	}
+	eVarKind KindOf(string name)
+	{
+		if (Table.find(name) != Table.end())
+		{
+			return Table[name].eKind;
+		}
+		else
+			Assert(false, "No Var of this name");
+	}
+	string TypeOf(string name)
+	{
+		if (Table.find(name) != Table.end())
+		{
+			return Table[name].type;
+		}
+		else
+			Assert(false, "No Var of this name");
+	}
+	int IndexOf(string name)
+	{
+		if (Table.find(name) != Table.end())
+		{
+			return Table[name].nKindCnt;
+		}
+		else
+			Assert(false, "No Var of this name");
+	}
+};
+
 class JackTokenizer{
 	FILE* xp;
 	string CurLine;
@@ -361,8 +448,11 @@ public:
 
 
 class CompilationEngine{
+	string ClassName;
 	FILE* xfp;
 	JackTokenizer * pJackTok;
+	SymbolTable objClassLevelST;
+	SymbolTable objRoutineLevelST;
 	int curTab;
 	void(CompilationEngine::*pfCompileStatement[key_STATEMENTS_CNT])();
 public:
@@ -376,6 +466,30 @@ public:
 		curTab = 0;
 		
 	}
+
+	void PrintVarProperties(string varName,bool bDec)
+	{
+		if (objRoutineLevelST.isVarDec(varName))
+		{
+			PRINT_TABS(curTab);
+			fprintf(xfp, "kind = %d, type = %s,index = %d\n", objRoutineLevelST.KindOf(varName), objRoutineLevelST.TypeOf(varName).c_str(), objRoutineLevelST.IndexOf(varName));
+		}
+		else if (objClassLevelST.isVarDec(varName))
+		{
+			PRINT_TABS(curTab);
+			fprintf(xfp, "kind = %d, type = %s,index = %d\n", objClassLevelST.KindOf(varName),objClassLevelST.TypeOf(varName).c_str(),objClassLevelST.IndexOf(varName));
+		}
+		else
+		{
+			return;
+			Assert(false, "Variable Not present");
+		}
+		if (bDec)
+			PRINT_WITH_TAB(curTab, "<VarWasDec></VarWasDec>\n")
+		else
+		PRINT_WITH_TAB(curTab, "<VarWasUsed></VarWasUsed>\n")
+	}
+
 
 	void eatPrint(string match,string Type)
 	{
@@ -410,19 +524,36 @@ public:
 	{
 		while (pJackTok->CurToken == "static" || pJackTok->CurToken == "field")
 		{
+			VarP stVar;
+			string kind = pJackTok->CurToken;
+			stVar.eKind = VarKindMap[pJackTok->CurToken];
+			Assert(stVar.eKind == eStaticVar || stVar.eKind == eFieldVar, "Wrong Class Variables");
 			PRINT_WITH_TAB(curTab++, "<classVarDec>\n")
 
 			PRINT_IDEN_WITH_TAB(curTab, "<keyword> %s </keyword>\n", pJackTok->CurToken.c_str());
 			pJackTok->advance();
 			//PRINT_IDEN_WITH_TAB(curTab, "<keyword> %s </keyword>\n", pJackTok->CurToken.c_str());
+			stVar.type = pJackTok->CurToken;
 			PrintType();
 			pJackTok->advance();
 			PRINT_IDEN_WITH_TAB(curTab, "<identifier> %s </identifier>\n", pJackTok->CurToken.c_str());
+			//ST
+
+			PRINT_IDEN_WITH_TAB(curTab, "<kind> %s </kind>\n", kind.c_str());
+			stVar.name = pJackTok->CurToken;
+			objClassLevelST.Define(pJackTok->CurToken, stVar.type, stVar.eKind);
+			PrintVarProperties(stVar.name, true);
+
 			pJackTok->advance();
 			while (pJackTok->CurToken == ",")
 			{
 				eatPrint(",","symbol");
 				PRINT_IDEN_WITH_TAB(curTab, "<identifier> %s </identifier>\n", pJackTok->CurToken.c_str());
+				//ST
+				PRINT_IDEN_WITH_TAB(curTab, "<kind> %s </kind>\n", kind.c_str());
+				stVar.name = pJackTok->CurToken;
+				objClassLevelST.Define(pJackTok->CurToken, stVar.type, stVar.eKind);
+				PrintVarProperties(stVar.name, true);
 				pJackTok->advance();
 			}
 			pJackTok->eat(";");
@@ -438,10 +569,16 @@ public:
 
 		while (pJackTok->CurToken != ")")
 		{
+			VarP stVar;
+			stVar.eKind = eArgVar;
+			stVar.type = pJackTok->CurToken;
 			PrintType();
 			//PRINT_IDEN_WITH_TAB(curTab, "<keyword> %s </keyword>\n", pJackTok->CurToken.c_str());
 			pJackTok->advance();
+			stVar.name = pJackTok->CurToken;
+			objRoutineLevelST.Define(stVar);
 			PRINT_IDEN_WITH_TAB(curTab, "<identifier> %s </identifier>\n", pJackTok->CurToken.c_str());
+			PrintVarProperties(stVar.name, true);
 			pJackTok->advance();
 			if (pJackTok->CurToken == ",")
 			{
@@ -455,20 +592,27 @@ public:
 
 	void CompileSubRoutineDec()
 	{
-		
-			PRINT_WITH_TAB(curTab++, "<subroutineDec>\n");
-			PRINT_IDEN_WITH_TAB(curTab, "<keyword> %s </keyword>\n", pJackTok->CurToken.c_str());
-			pJackTok->advance();
-			PrintType();
-			//PRINT_IDEN_WITH_TAB(curTab, "<keyword> %s </keyword>\n", pJackTok->CurToken.c_str());
-			pJackTok->advance();
-			PRINT_IDEN_WITH_TAB(curTab, "<identifier> %s </identifier>\n", pJackTok->CurToken.c_str());
-			pJackTok->advance();
-			eatPrint("(","symbol");
-			CompileParamList();
-			eatPrint(")", "symbol");
-			CompileSubRoutineBody();
-			PRINT_WITH_TAB(--curTab, "</subroutineDec>\n");
+		objRoutineLevelST.StartSubRoutine();
+
+		PRINT_WITH_TAB(curTab++, "<subroutineDec>\n");
+		PRINT_IDEN_WITH_TAB(curTab, "<keyword> %s </keyword>\n", pJackTok->CurToken.c_str());
+		if (pJackTok->CurToken == "method")
+		{
+			PRINT_WITH_TAB(curTab, "<this></this>\n");
+			objRoutineLevelST.Define("this", ClassName, eArgVar);
+			PrintVarProperties("this", true);
+		}
+		pJackTok->advance();
+		PrintType();
+		//PRINT_IDEN_WITH_TAB(curTab, "<keyword> %s </keyword>\n", pJackTok->CurToken.c_str());
+		pJackTok->advance();
+		PRINT_IDEN_WITH_TAB(curTab, "<identifier> %s </identifier>\n", pJackTok->CurToken.c_str());
+		pJackTok->advance();
+		eatPrint("(","symbol");
+		CompileParamList();
+		eatPrint(")", "symbol");
+		CompileSubRoutineBody();
+		PRINT_WITH_TAB(--curTab, "</subroutineDec>\n");
 
 	}
 
@@ -476,18 +620,27 @@ public:
 	{
 		while (pJackTok->CurToken == "var")
 		{
+			VarP stVar;
+			stVar.eKind = eLocalVar;
 			PRINT_WITH_TAB(curTab++, "<varDec>\n");
 			eatPrint("var", "keyword");
 			PrintType();
+			stVar.type = pJackTok->CurToken;
 			pJackTok->advance();
+			stVar.name = pJackTok->CurToken;
+			objRoutineLevelST.Define(stVar);
 			PRINT_IDEN_WITH_TAB(curTab, "<identifier> %s </identifier>\n", pJackTok->CurToken.c_str());
+			PrintVarProperties(stVar.name, true);
 			pJackTok->advance();
 			while (pJackTok->CurToken == ",")
 			{
 				eatPrint(",", "symbol");
 				//PrintType();
 				//pJackTok->advance();
+				stVar.name = pJackTok->CurToken;
+				objRoutineLevelST.Define(stVar);
 				PRINT_IDEN_WITH_TAB(curTab, "<identifier> %s </identifier>\n", pJackTok->CurToken.c_str());
+				PrintVarProperties(stVar.name, true);
 				pJackTok->advance();
 			}
 			eatPrint(";", "symbol");
@@ -549,6 +702,7 @@ public:
 			else if (nnTok == "[")
 			{
 				PRINT_IDEN_WITH_TAB(curTab, "<identifier> %s </identifier>\n", nexTok.c_str());
+				PrintVarProperties(nexTok, false);
 				eatPrint("[", "symbol");
 				compileExpression();
 				eatPrint("]", "symbol");
@@ -556,6 +710,7 @@ public:
 			else
 			{
 				PRINT_IDEN_WITH_TAB(curTab, "<identifier> %s </identifier>\n", nexTok.c_str());
+				PrintVarProperties(nexTok, false);
 				//pJackTok->advance();
 			}
 		}
@@ -632,6 +787,7 @@ public:
 		PRINT_WITH_TAB(curTab++, "<letStatement>\n");
 		eatPrint("let", "keyword");
 		PRINT_IDEN_WITH_TAB(curTab, "<identifier> %s </identifier>\n", pJackTok->CurToken.c_str());
+		PrintVarProperties(pJackTok->CurToken,false);
 		pJackTok->advance();
 		if (pJackTok->CurToken == "[")
 		{
@@ -667,6 +823,10 @@ public:
 	{
 		//Sub Routine Name
 		PRINT_IDEN_WITH_TAB(curTab, "<identifier> %s </identifier>\n", fTok.c_str());
+		if (!(fTok == "Math" || fTok == "Array" || fTok == "Output" || fTok == "Screen" || fTok == "Keyboard" || fTok == "Memory"
+			|| fTok == "Sys"))
+			PrintVarProperties(fTok, false);
+
 		//pJackTok->advance();
 		if (pJackTok->CurToken == ".")
 		{
@@ -733,6 +893,7 @@ public:
 		pJackTok->eat("class");
 		PRINT_WITH_TAB(curTab++, "<class>\n");
 		PRINT_WITH_TAB(curTab, "<keyword> class </keyword>\n");
+		ClassName = pJackTok->CurToken;
 		PRINT_IDEN_WITH_TAB(curTab, "<identifier> %s </identifier>\n", pJackTok->CurToken.c_str());
 		pJackTok->advance();
 		eatPrint("{","symbol");
