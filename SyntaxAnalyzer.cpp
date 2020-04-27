@@ -644,6 +644,7 @@ public:
 
 	void CompileSubRoutineDec()
 	{
+		string funcType = pJackTok->CurToken;
 		objRoutineLevelST.StartSubRoutine();
 		PRINT_WITH_TAB(curTab++, "<subroutineDec>\n");
 		PRINT_IDEN_WITH_TAB(curTab, "<keyword> %s </keyword>\n", pJackTok->CurToken.c_str());
@@ -659,12 +660,12 @@ public:
 		pJackTok->advance();
 		PRINT_IDEN_WITH_TAB(curTab, "<identifier> %s </identifier>\n", pJackTok->CurToken.c_str());
 		fprintf(fpVM, "function %s.%s ", ClassName.c_str(), pJackTok->CurToken.c_str());
-
+		
 		pJackTok->advance();
 		eatPrint("(","symbol");
 		CompileParamList();
 		eatPrint(")", "symbol");
-		CompileSubRoutineBody();
+		CompileSubRoutineBody(funcType);
 		PRINT_WITH_TAB(--curTab, "</subroutineDec>\n");
 
 	}
@@ -731,6 +732,10 @@ public:
 				fprintf(fpVM, "push constant 0\n");
 			else if (nexTok == "true")
 				fprintf(fpVM, "push constant 1\nneg\n");
+			else if (nexTok == "this")
+				fprintf(fpVM, "push pointer 0\n");
+			else
+				Assert(false, "Wrong Constant");
 			eatPrint(nexTok, "keyword");
 			Assert(KeyWordsMap[nexTok] >= key_KW_CONST_START && KeyWordsMap[nexTok] <= key_KW_CONST_END, "Wrong KeyWord Constant");
 		}
@@ -906,7 +911,11 @@ public:
 		if (!(fTok == "Math" || fTok == "Array" || fTok == "Output" || fTok == "Screen" || fTok == "Keyboard" || fTok == "Memory"
 			|| fTok == "Sys"))
 			PrintVarProperties(fTok, false);
-
+		if (bMethodCall)
+		{
+			PrintVar("push", fTok);
+			funcName = objRoutineLevelST.isVarDec(fTok) ? objRoutineLevelST.TypeOf(fTok) : objClassLevelST.TypeOf(fTok);
+		}
 		//pJackTok->advance();
 		if (pJackTok->CurToken == ".")
 		{
@@ -917,6 +926,13 @@ public:
 			PRINT_IDEN_WITH_TAB(curTab, "<identifier> %s </identifier>\n", pJackTok->CurToken.c_str());
 			pJackTok->advance();
 		}
+		else
+		{
+			funcName = ClassName + "." + funcName;
+			bMethodCall = true;
+			fprintf(fpVM, "push pointer 0\n");
+		}
+
 		eatPrint("(", "symbol");
 		int argCnt = compileExpList() + (bMethodCall?1:0);
 		eatPrint(")", "symbol");
@@ -947,7 +963,7 @@ public:
 		else{
 			fprintf(fpVM, "push constant 0\n");
 		}
-		fprintf(fpVM, "return\n");
+		fprintf(fpVM, "return\n\n");
 		eatPrint(";", "symbol");
 		PRINT_WITH_TAB(--curTab, "</returnStatement>\n");
 
@@ -964,12 +980,16 @@ public:
 
 
 
-	void CompileSubRoutineBody()
+	void CompileSubRoutineBody(string funcType)
 	{
 		PRINT_WITH_TAB(curTab++, "<subroutineBody>\n");
 		eatPrint("{","symbol");
 		CompileVarDec();
 		fprintf(fpVM,"%d\n",objRoutineLevelST.VarCount(eLocalVar));
+		if (funcType == "constructor")
+			fprintf(fpVM, "push constant %d\ncall Memory.alloc 1\npop pointer 0\n", objClassLevelST.VarCount(eFieldVar));
+		else if (funcType == "method")
+			fprintf(fpVM, "push argument 0\npop pointer 0\n");
 		compileStatements();
 		eatPrint("}", "symbol");
 		PRINT_WITH_TAB(--curTab, "</subroutineBody>\n");
