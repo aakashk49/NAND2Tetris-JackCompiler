@@ -93,6 +93,13 @@ enum eVarKind{
 	eUndefVar = eVarKindCnt
 };
 //maps
+unordered_map<eVarKind, string> SegmentMap = {
+	{ eStaticVar, "static" },
+	{eFieldVar, "this"},
+	{eArgVar, "argument"},
+	{eLocalVar, "local"}
+};
+
 unordered_map<char, eSYMBOLS> SymbolsMap = {
 	{ '{', eLeftCurl },
 	{ '}', eRightCurl },
@@ -464,6 +471,8 @@ class CompilationEngine{
 	string ClassName;
 	FILE* xfp;
 	FILE* fpVM;
+	bool LHSTerm;
+	int nLabelCnt;
 	JackTokenizer * pJackTok;
 	SymbolTable objClassLevelST;
 	SymbolTable objRoutineLevelST;
@@ -480,7 +489,8 @@ public:
 		Assert(fpVM, "Unable to open Output VM File");
 		//fprintf(xp, "<tokens>\n");
 		curTab = 0;
-		
+		LHSTerm = false;
+		nLabelCnt = 0;
 	}
 	~CompilationEngine()
 	{
@@ -489,6 +499,26 @@ public:
 		if (fpVM)
 			fclose(fpVM);
 	}
+	void PrintVar(string PushPop, string varName)
+	{
+		SymbolTable* pObjST = NULL;
+		if (objRoutineLevelST.isVarDec(varName))
+		{
+			pObjST = &objRoutineLevelST;
+		}
+		else if (objClassLevelST.isVarDec(varName))
+		{
+			pObjST = &objClassLevelST;
+		}
+		else
+		{
+		//	return;
+			Assert(false, "Variable Not present");
+		}
+		//SegmentMap
+		fprintf(fpVM, "%s %s %d\n", PushPop.c_str(), SegmentMap[pObjST->KindOf(varName)].c_str(),pObjST->IndexOf(varName));
+	}
+
 	void PrintVarProperties(string varName,bool bDec)
 	{
 		if (objRoutineLevelST.isVarDec(varName))
@@ -697,6 +727,10 @@ public:
 		}
 		else if (KeyWordsMap.find(nexTok) != KeyWordsMap.end())//KeyWordConstant
 		{
+			if (nexTok == "false" || nexTok == "null")
+				fprintf(fpVM, "push constant 0\n");
+			else if (nexTok == "true")
+				fprintf(fpVM, "push constant 1\nneg\n");
 			eatPrint(nexTok, "keyword");
 			Assert(KeyWordsMap[nexTok] >= key_KW_CONST_START && KeyWordsMap[nexTok] <= key_KW_CONST_END, "Wrong KeyWord Constant");
 		}
@@ -704,6 +738,11 @@ public:
 		{
 			eatPrint(nexTok, "symbol");
 			CompileTerm();
+			if (nexTok == "-")
+			fprintf(fpVM, "neg\n");
+			else 
+				fprintf(fpVM, "not\n");
+
 		}
 		else if (nexTok[0] == '\"')//string constant
 		{
@@ -735,6 +774,7 @@ public:
 			{
 				PRINT_IDEN_WITH_TAB(curTab, "<identifier> %s </identifier>\n", nexTok.c_str());
 				PrintVarProperties(nexTok, false);
+				PrintVar("push", nexTok);
 				//pJackTok->advance();
 			}
 		}
@@ -775,14 +815,17 @@ public:
 
 	void compileIfStatement()
 	{
+		int lclLblCnt = ++nLabelCnt;
 		PRINT_WITH_TAB(curTab++, "<ifStatement>\n");
 		eatPrint("if", "keyword");
 		eatPrint("(", "symbol");
 		compileExpression();
 		eatPrint(")", "symbol");
+		fprintf(fpVM, "not\nif-goto IF_ELSE%d\n", lclLblCnt);
 		eatPrint("{", "symbol");
 		compileStatements();
 		eatPrint("}", "symbol");
+		fprintf(fpVM, "goto IF_EXIT%d\nlabel IF_ELSE%d\n", lclLblCnt, lclLblCnt);
 		//else part
 		if (pJackTok->CurToken == "else")
 		{
@@ -791,27 +834,32 @@ public:
 			compileStatements();
 			eatPrint("}", "symbol");
 		}
+		fprintf(fpVM, "label IF_EXIT%d\n", lclLblCnt);
 		PRINT_WITH_TAB(--curTab, "</ifStatement>\n");
 	}
 
 	void compileWhileStatement()
 	{
+		int lclLblCnt = ++nLabelCnt;
+		fprintf(fpVM, "label WHILE_TRUE%d\n", lclLblCnt);
 		PRINT_WITH_TAB(curTab++, "<whileStatement>\n");
 		eatPrint("while", "keyword");
 		eatPrint("(", "symbol");
 		compileExpression();
+		fprintf(fpVM, "not\nif-goto WHILE_FALSE%d\n", lclLblCnt);
 		eatPrint(")", "symbol");
 		eatPrint("{", "symbol");
 		compileStatements();
+		fprintf(fpVM, "goto WHILE_TRUE%d\nlabel WHILE_FALSE%d\n", lclLblCnt, lclLblCnt);
 		eatPrint("}", "symbol");
 		PRINT_WITH_TAB(--curTab, "</whileStatement>\n");
-
 	}
 
 	void compileLetStatement()
 	{
 		PRINT_WITH_TAB(curTab++, "<letStatement>\n");
 		eatPrint("let", "keyword");
+		string LHSVar = pJackTok->CurToken;
 		PRINT_IDEN_WITH_TAB(curTab, "<identifier> %s </identifier>\n", pJackTok->CurToken.c_str());
 		PrintVarProperties(pJackTok->CurToken,false);
 		pJackTok->advance();
@@ -823,6 +871,7 @@ public:
 		}
 		eatPrint("=", "symbol");
 		compileExpression();
+		PrintVar("pop", LHSVar);
 		eatPrint(";", "symbol");
 		PRINT_WITH_TAB(--curTab, "</letStatement>\n");
 
@@ -896,8 +945,9 @@ public:
 		if (pJackTok->CurToken != ";")
 			compileExpression();
 		else{
-			fprintf(fpVM, "push constant 0");
+			fprintf(fpVM, "push constant 0\n");
 		}
+		fprintf(fpVM, "return\n");
 		eatPrint(";", "symbol");
 		PRINT_WITH_TAB(--curTab, "</returnStatement>\n");
 
