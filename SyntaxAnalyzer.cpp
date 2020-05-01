@@ -751,7 +751,13 @@ public:
 		}
 		else if (nexTok[0] == '\"')//string constant
 		{
+			string str = nexTok.substr(1);
 			PRINT_IDEN_WITH_TAB(curTab, "<stringConstant> %s </stringConstant>\n", nexTok.substr(1).c_str());
+			fprintf(fpVM, "push constant %d\ncall String.new 1\n", str.size());
+			for (int i = 0; i < str.size(); ++i)
+			{
+				fprintf(fpVM, "push constant %d\ncall String.appendChar 2\n",str[i]);
+			}
 			pJackTok->advance();
 		}
 		else if (nexTok[0] >= '0' && nexTok[0] <= '9')//integer Constant
@@ -771,9 +777,11 @@ public:
 			{
 				PRINT_IDEN_WITH_TAB(curTab, "<identifier> %s </identifier>\n", nexTok.c_str());
 				PrintVarProperties(nexTok, false);
+				PrintVar("push", nexTok);
 				eatPrint("[", "symbol");
 				compileExpression();
 				eatPrint("]", "symbol");
+				fprintf(fpVM, "add\npop pointer 1\npush that 0\n");
 			}
 			else
 			{
@@ -865,18 +873,30 @@ public:
 		PRINT_WITH_TAB(curTab++, "<letStatement>\n");
 		eatPrint("let", "keyword");
 		string LHSVar = pJackTok->CurToken;
+		bool bArrVar = false;
 		PRINT_IDEN_WITH_TAB(curTab, "<identifier> %s </identifier>\n", pJackTok->CurToken.c_str());
 		PrintVarProperties(pJackTok->CurToken,false);
 		pJackTok->advance();
 		if (pJackTok->CurToken == "[")
 		{
+			//fprintf(fpVM, "push %s\n", LHSVar.c_str());
+			PrintVar("push", LHSVar);
+			bArrVar = true;
 			eatPrint("[", "symbol");
 			compileExpression();
 			eatPrint("]", "symbol");
+			fprintf(fpVM, "add\npop pointer 1\n");
 		}
 		eatPrint("=", "symbol");
 		compileExpression();
-		PrintVar("pop", LHSVar);
+		if (bArrVar)
+		{
+			fprintf(fpVM, "pop that 0\n");
+		}
+		else
+		{
+			PrintVar("pop", LHSVar);
+		}
 		eatPrint(";", "symbol");
 		PRINT_WITH_TAB(--curTab, "</letStatement>\n");
 
