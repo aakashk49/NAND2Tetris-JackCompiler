@@ -366,16 +366,16 @@ public:
 
 	void advance()
 	{
-		char line[100];
+		char line[200];
 
 		if (CurLine.size() == 0)
 		{
-			while (fgets(line, 100, ip) != NULL)
+			while (fgets(line, 200, ip) != NULL)
 			{
 				if (line[0] != '\n')//ignore Empty Line
 				{
 					int i = 0;
-					while (i < 99 && (line[i] == ' ' || line[i] == '\t'))i++;
+					while (i < 199 && (line[i] == ' ' || line[i] == '\t'))i++;
 					if (line[i] == '/' || line[i] == '*' || line[i] == '\n')//Ignore line Having only comments
 						continue;
 					else
@@ -389,7 +389,7 @@ public:
 							j++;
 							c = line[i + j];
 						} while (c != '\n' &&  !(c == '/' && line[i + j + 1] == '/'));
-						while (ins.back() == ' ')ins.pop_back();
+						while (ins.back() == ' ' || ins.back()=='\t')ins.pop_back();
 						//objJackTokenizer.ProcessOneLine(ins);
 						CurLine = ins;
 						idxInLine = 0;
