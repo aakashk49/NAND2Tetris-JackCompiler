@@ -885,12 +885,14 @@ public:
 			eatPrint("[", "symbol");
 			compileExpression();
 			eatPrint("]", "symbol");
-			fprintf(fpVM, "add\npop pointer 1\n");
+			//fprintf(fpVM, "add\npop pointer 1\n");
+			fprintf(fpVM, "add\n");
 		}
 		eatPrint("=", "symbol");
 		compileExpression();
 		if (bArrVar)
 		{
+			fprintf(fpVM, "pop temp 0\npop pointer 1\npush temp 0\n");
 			fprintf(fpVM, "pop that 0\n");
 		}
 		else
